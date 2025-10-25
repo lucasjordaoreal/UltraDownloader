@@ -1,59 +1,55 @@
 # 🎬 YouTube Downloader Tool
 
-Uma ferramenta moderna e simples para baixar vídeos e áudios do YouTube em alta qualidade, com interface gráfica construída em **CustomTkinter** e motor de download baseado no **yt-dlp**.
+A modern and simple tool for downloading high-quality YouTube videos and audio, with a graphical interface built in **CustomTkinter** and a download engine based on **yt-dlp**.
 
 ---
 
-## 🧰 Funcionalidades
+## 🧰 Features
 
-- 📺 Baixe vídeos em MP4 com áudio (até **4K real**)
-- 🎞️ Escolha resoluções personalizadas: 144p até 2160p (4K)
-- 🎧 Extraia apenas o áudio em **MP3** ou **M4A**
-- 🔄 Conversão automática para **H.264 (MP4)** — compatível com qualquer player
-- 💾 Escolha a pasta de destino dos downloads
-- ⚡ Barra de progresso com tempo restante
-- 🟥 Interface escura elegante com botões vermelhos
-
----
-
-## 🧱 Requisitos
-
-Nada para instalar!  
-O aplicativo é **autônomo** — todas as dependências, incluindo **FFmpeg** e **yt-dlp**, já estão integradas no executável.
-
-> ⚠️ Apenas o **Windows 10 ou superior** é suportado no momento.
+- 📺 Download videos in MP4 with audio (up to **real 4K**)
+- 🎞️ Choose custom resolutions: 144p to 2160p (4K)
+- 🎧 Extract only the audio in **MP3** or **M4A**
+- 🔄 Automatic conversion to **H.264 (MP4)** — compatible with any player
+- 💾 Choose the download destination folder
+- ⚡ Progress bar with remaining time
+- 🟥 Elegant dark interface with red buttons
 
 ---
 
-## 🚀 Como usar
+## 🧱 Requirements
 
-1. Baixe o arquivo **`YouTube Downloader Tool.exe`** na seção [Releases](../../releases).
-2. Extraia o conteúdo do ZIP.
-3. Dê **duplo clique** em `YouTube Downloader Tool.exe`.
-4. Cole o link do vídeo e escolha o formato e resolução.
-5. Clique em **Baixar** e aguarde!
+Nothing to install!
+The application is **standalone** — all dependencies, including **FFmpeg** and **yt-dlp**, are already integrated into the executable.
+
+> ⚠️ Only **Windows 10 or higher** is currently supported.
 
 ---
 
-## 📦 Estrutura recomendada
+## 🚀 How to use
+
+1. Download the **`YouTube Downloader Tool.exe`** file from the [Releases](../../releases) section.
+2. Extract the contents of the ZIP file.
+3. **Double-click** on `YouTube Downloader Tool.exe`.
+4. Paste the video link and choose the format and resolution.
+5. Click **Download** and wait!
+
+---
+
+## 📦 Recommended Structure
 
 ```
 YouTube Downloader Tool/
 │
-├── YouTube Downloader Tool.exe   ← executável principal
-├── icon.ico   ← Ícone do aplicativo
+├── YouTube Downloader Tool.exe   ← main executable
+├── icon.ico   ← Application icon
 └── ffmpeg/
-    └── bin/
-        ├── ffmpeg.exe
-        ├── ffprobe.exe
-        └── ffplay.exe
+└── bin/
+├── ffmpeg.exe
+├── ffprobe.exe
+└── ffplay.exe
 ```
 
-> A pasta `ffmpeg` deve estar no mesmo diretório do executável.
-
----
-
-## 🧩 Tecnologias utilizadas
+> The `ffmpeg` folder must be in the same directory as the executable. ## 🧩 Technologies Used
 
 - [Python 3.11+](https://www.python.org)
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)
@@ -62,7 +58,7 @@ YouTube Downloader Tool/
 
 ---
 
-## 🧑‍💻 Autor
+## 🧑‍💻 Author
 
-Desenvolvido por **Lucas Jordão** 💻  
-Se curtiu o projeto, ⭐ **dê uma estrela** no repositório!
+Developed by **Lucas Jordão** 💻
+If you liked the project, ⭐ **give it a star** on the repository!
