@@ -41,6 +41,7 @@ O aplicativo é **autônomo** — todas as dependências, incluindo **FFmpeg** e
 YouTube Downloader Tool/
 │
 ├── YouTube Downloader Tool.exe   ← executável principal
+├── icon.ico   ← Ícone do aplicativo
 └── ffmpeg/
     └── bin/
         ├── ffmpeg.exe
