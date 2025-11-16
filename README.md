@@ -1,4 +1,4 @@
-# 🎬 YouTube Downloader Tool
+# 🎬 UltraDownloader
 
 A modern and simple tool for downloading high-quality YouTube videos and audio, with a graphical interface built in **CustomTkinter** and a download engine based on **yt-dlp**.
 
