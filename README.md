@@ -56,4 +56,4 @@ Se você é desenvolvedor ou gosta de mexer no código, veja como rodar o projet
 
 ---
 
-* UltraDownloader Feito para simplificar sua vida!*
+* UltraDownloader Feito para simplificar sua vida!
