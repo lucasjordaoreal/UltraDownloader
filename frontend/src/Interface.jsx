@@ -4,7 +4,7 @@ import styled, { ThemeProvider, createGlobalStyle, css, keyframes } from "styled
 import {
   Send, Loader2, Film, FileMusic, SlidersHorizontal,
   ChevronDown, UploadCloud, Check, Link as LinkIcon, List, X, ShieldCheck, Sparkles,
-  Download, FileVideo, FolderOpen, Copy, Cpu, Zap, Square
+  Download, FileVideo, FolderOpen, Copy, Cpu, Zap, Square, RefreshCw, Image as ImageIcon
 } from "lucide-react";
 
 /* ================================================================================================
@@ -117,6 +117,45 @@ const ENGINE_OPTIONS = [
   { value: "gpu", label: "GPU (NVENC/AMF/QSV)", icon: <Zap size={14} /> },
   { value: "auto", label: "Automático", icon: <Sparkles size={14} /> },
 ];
+
+// Converter format lists
+const AUDIO_FORMATS_LIST = [
+  "MP3", "OGG", "FLAC", "M4A", "OPUS", "M4R", "WV", "AIFF", "AAC", "GSM", "WMA", "MP2", "AMR", "CDDA", "8SVX", "CAF", "DTS", "OGA", "AU", "CVS", "VOX", "SLN", "AC3", "FAP", "SND", "IMA", "W64", "AMB", "RA", "SPX", "PRC", "SOU", "HTK", "VOC", "SNDR", "TTA", "DVMS", "SNDT", "WVE", "VMS", "SMP", "PVF", "MAUD", "AVR", "CVSD", "CVU", "PAF", "FSSD", "GSRT", "HCOM", "IRCAM", "SPH", "NIST", "TXW", "SD2", "WAV"
+];
+
+const VIDEO_FORMATS_LIST = [
+  "3G2", "3GP", "AAF", "ASF", "AV1", "AVCHD", "AVI", "CAVS", "DIVX", "DV", "F4V", "FLV", "HEVC", "M2TS", "M2V", "M4V", "MJPEG", "MKV", "MOD", "MOV", "MP4", "MPEG", "MPEG-2", "MPG", "MTS", "MXF", "OGV", "RM", "RMVB", "SWF", "TOD", "TS", "VOB", "WEBM", "WMV", "WTV", "XVID"
+];
+
+const IMAGE_FORMATS_LIST = [
+  "3FR", "ARW", "AVIF", "BMP", "CR2", "CRW", "CUR", "DCM", "DCR", "DDS", "DNG", "ERF", "EXR", "FAX", "FTS", "G3", "G4", "GIF", "GV", "HDR", "HEIC", "HEIF", "HRZ", "ICO", "IIQ", "IPL", "JBG", "JBIG", "JFI", "JFIF", "JIF", "JNX", "JP2", "JPE", "JPEG", "JPG", "JPS", "K25", "KDC", "MAC", "MAP", "MEF", "MNG", "MRW", "MTV", "NEF", "NRW", "ORF", "OTB", "PAL", "PALM", "PAM", "PBM", "PCD", "PCT", "PCX", "PDB", "PEF", "PES", "PFM", "PGM", "PGX", "PICON", "PICT", "PIX", "PLASMA", "PNG", "PNM", "PPM", "PSD", "PWP", "RAF", "RAS", "RGB", "RGBA", "RGBO", "RGF", "RLA", "RLE", "RW2", "SCT", "SFW", "SGI", "SIX", "SIXEL", "SR2", "SRF", "SUN", "SVG", "TGA", "TIFF", "TIM", "TM2", "UYVY", "VIFF", "VIPS", "WBMP", "WEBP", "WMZ", "WPG", "X3F", "XBM", "XC", "XCF", "XPM", "XV", "XWD", "YUV"
+];
+
+// Taglines for brand animation
+// Taglines for brand animation
+const BRAND_VARIATIONS = [
+  { prefix: "Download Rápido", suffixes: ["Sem Limites", "Grátis", "Seguro"] },
+  { prefix: "Compressor", suffixes: ["Sem Limites", "Grátis", "Ultra Leve"] },
+  { prefix: "Conversor", suffixes: ["Sem Limites", "Grátis", "Multiformato"] },
+];
+
+// Helper to detect type from file
+function detectMediaType(file) {
+  const ext = file.name.split('.').pop()?.toLowerCase() || '';
+  const mime = file.type || '';
+
+  // 1. Check extension first (most reliable for our specific lists)
+  if (AUDIO_FORMATS_LIST.some(f => f.toLowerCase() === ext)) return "audio";
+  if (VIDEO_FORMATS_LIST.some(f => f.toLowerCase() === ext)) return "video";
+  if (IMAGE_FORMATS_LIST.some(f => f.toLowerCase() === ext)) return "image";
+
+  // 2. Fallback to MIME type
+  if (mime.startsWith('audio/')) return "audio";
+  if (mime.startsWith('video/')) return "video";
+  if (mime.startsWith('image/')) return "image";
+
+  return null; // Unknown
+}
 
 const DISCORD_TARGET_BYTES = 9 * 1024 * 1024;
 
@@ -474,10 +513,68 @@ export default function DriveStyleDownloader() {
   const [compressProgress, setCompressProgress] = useState(0);
   const [compressResult, setCompressResult] = useState(null);
   const [compressTargetDir, setCompressTargetDir] = useState(null);
+
+  // Converter state
+  const [converterType, setConverterType] = useState("audio"); // "audio" | "video" | "image"
+  const [selectedInputFormat, setSelectedInputFormat] = useState("");
+  const [selectedOutputFormat, setSelectedOutputFormat] = useState("");
+  const [converterResolution, setConverterResolution] = useState("1080p");
+  const [optionalImage, setOptionalImage] = useState(null);
+  const [converterSource, setConverterSource] = useState(null);
+  const [converterBusy, setConverterBusy] = useState(false);
+  const [converterProgress, setConverterProgress] = useState(0);
+  const [converterStatus, setConverterStatus] = useState("Selecione um arquivo para começar.");
+  const [converterResult, setConverterResult] = useState(null);
+  const [converterDragging, setConverterDragging] = useState(false);
   const [linkProvider, setLinkProvider] = useState(null);
   const [instagramMeta, setInstagramMeta] = useState(null);
   const [instagramLoading, setInstagramLoading] = useState(false);
   const [instagramError, setInstagramError] = useState(null);
+
+
+  // Brand animation state (Prefix + Suffix)
+  const [prefixIndex, setPrefixIndex] = useState(0);
+  const [suffixIndex, setSuffixIndex] = useState(0);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
+  useEffect(() => {
+    if (prefersReduced) return;
+
+    // Cycle Effect: Only runs when NOT transitioning
+    if (!isTransitioning) {
+      const currentVariations = BRAND_VARIATIONS[prefixIndex];
+      const SHOW_DURATION = 2000;
+
+      const timeout = setTimeout(() => {
+        setSuffixIndex((prevSx) => {
+          if (prevSx + 1 >= currentVariations.suffixes.length) {
+            setIsTransitioning(true); // Trigger transition effect
+            return prevSx;
+          }
+          return prevSx + 1;
+        });
+      }, SHOW_DURATION);
+
+      return () => clearTimeout(timeout);
+    }
+  }, [prefixIndex, suffixIndex, isTransitioning, prefersReduced]);
+
+  // Transition Effect: Handles the fade out -> swap -> fade in sequence
+  useEffect(() => {
+    if (isTransitioning) {
+      const FADE_DURATION = 250;
+
+      const timeout = setTimeout(() => {
+        setPrefixIndex((prev) => (prev + 1) % BRAND_VARIATIONS.length);
+        setSuffixIndex(0);
+
+        // Brief delay to allow DOM to update hidden text before fading in
+        setTimeout(() => setIsTransitioning(false), 50);
+      }, FADE_DURATION);
+
+      return () => clearTimeout(timeout);
+    }
+  }, [isTransitioning]);
 
   // Estados de update removidos
 
@@ -1003,6 +1100,30 @@ export default function DriveStyleDownloader() {
                   target_size_human: data.target_size_human ?? prev?.target_size_human,
                 };
               });
+            }
+            return;
+          }
+
+          if (data.task === "converter") {
+            if (typeof data.progress === "number") {
+              setConverterProgress(Math.max(0, Math.min(100, data.progress)));
+            }
+            if (data.status) {
+              const statusText = String(data.status);
+              setConverterStatus(statusText);
+              if (/erro/i.test(statusText)) setConverterBusy(false);
+              if (/conclu/i.test(statusText)) setConverterBusy(false);
+              if (/cancelad/i.test(statusText)) {
+                setConverterBusy(false);
+                setConverterProgress(0);
+              }
+            }
+            if (data.output_path || data.filename) {
+              setConverterResult((prev) => ({
+                ...(prev || {}),
+                output_path: data.output_path || prev?.output_path,
+                filename: data.filename || prev?.filename,
+              }));
             }
             return;
           }
@@ -1568,6 +1689,533 @@ export default function DriveStyleDownloader() {
     </Section>
   );
 
+  // Handle converter file selection
+  const handleConverterFilePick = useCallback((fileList) => {
+    if (!fileList || fileList.length === 0) return;
+    const file = fileList[0];
+    if (!file) return;
+
+    // Detect file type
+    const detectedType = detectMediaType(file);
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+
+    setConverterSource(file);
+    if (detectedType) {
+      setConverterType(detectedType);
+    }
+    setSelectedInputFormat(ext);
+    setSelectedOutputFormat(""); // Clear output format on new file
+    setShowSuggestions(false);
+    setConverterBusy(false);
+    setConverterProgress(0);
+    setConverterStatus("Selecione o formato de saída e converta.");
+    setConverterResult(null);
+    setOptionalImage(null);
+  }, []);
+
+  // Autocomplete state
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [activeSuggestion, setActiveSuggestion] = useState(0);
+
+  // Filtered suggestions for autocomplete
+  const converterInputType = useMemo(() => converterSource ? detectMediaType(converterSource) : null, [converterSource]);
+
+  const filteredSuggestions = useMemo(() => {
+    if (!selectedOutputFormat) return [];
+    const input = selectedOutputFormat.toUpperCase().trim();
+    if (!input) return [];
+
+    let list = [];
+    if (converterType === "audio") list = AUDIO_FORMATS_LIST;
+    else if (converterType === "video") list = VIDEO_FORMATS_LIST;
+    else if (converterType === "image") list = IMAGE_FORMATS_LIST;
+
+    // Prefix match, exclude exact match if it's the only one? No, user wants smart behavior
+    // "Prefix-based matching"
+    const matches = list.filter(fmt => fmt.startsWith(input));
+    return matches.slice(0, 5);
+  }, [selectedOutputFormat, converterType]);
+
+  const handleSuggestionClick = useCallback((fmt) => {
+    setSelectedOutputFormat(fmt);
+    setShowSuggestions(false);
+    setActiveSuggestion(0);
+  }, []);
+
+  const handleInputKeyDown = useCallback((e) => {
+    if (!showSuggestions || filteredSuggestions.length === 0) return;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveSuggestion(prev => (prev + 1) % filteredSuggestions.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveSuggestion(prev => (prev - 1 + filteredSuggestions.length) % filteredSuggestions.length);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (filteredSuggestions[activeSuggestion]) {
+        handleSuggestionClick(filteredSuggestions[activeSuggestion]);
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setShowSuggestions(false);
+    }
+  }, [showSuggestions, filteredSuggestions, activeSuggestion, handleSuggestionClick]);
+
+  // Validation logic for output format
+  const isOutputFormatValid = useMemo(() => {
+    if (!selectedOutputFormat) return false;
+    const fmt = selectedOutputFormat.trim().toUpperCase();
+
+    // Helper to check if format exists in list (case-insensitive)
+    const check = (list) => list.some(item => item.toUpperCase() === fmt);
+
+    if (converterType === "audio") return check(AUDIO_FORMATS_LIST);
+    if (converterType === "video") return check(VIDEO_FORMATS_LIST);
+    if (converterType === "image") return check(IMAGE_FORMATS_LIST);
+    return false;
+  }, [selectedOutputFormat, converterType]);
+
+  const clearConverter = useCallback(() => {
+    setConverterSource(null);
+    setSelectedInputFormat("");
+    setSelectedOutputFormat("");
+    setConverterBusy(false);
+    setConverterProgress(0);
+    setConverterStatus("Selecione um arquivo para começar.");
+    setConverterResult(null);
+    setOptionalImage(null);
+  }, []);
+
+  const handleConverterFileInputChange = useCallback((event) => {
+    handleConverterFilePick(event.target.files);
+    event.target.value = "";
+  }, [handleConverterFilePick]);
+
+  const handleConverterDragOver = useCallback((event) => {
+    event.preventDefault();
+    setConverterDragging(true);
+  }, []);
+
+  const handleConverterDragLeave = useCallback((event) => {
+    event.preventDefault();
+    setConverterDragging(false);
+  }, []);
+
+  const handleConverterDrop = useCallback((event) => {
+    event.preventDefault();
+    setConverterDragging(false);
+    const fileList = event.dataTransfer?.files;
+    if (fileList?.length) handleConverterFilePick(fileList);
+  }, [handleConverterFilePick]);
+
+  const converterFileInputRef = useRef(null);
+  const optionalImageRef = useRef(null);
+
+  const handleOptionalImageChange = useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (file) setOptionalImage(file);
+    e.target.value = "";
+  }, []);
+
+  const handleStartConversion = useCallback(async () => {
+    if (!converterSource) {
+      notify("Selecione um arquivo para converter.", "error");
+      return;
+    }
+    if (!selectedOutputFormat || !isOutputFormatValid) {
+      notify("Formato de saída inválido.", "error");
+      return;
+    }
+
+    // Strict Validation Rules
+    const inputType = converterSource ? detectMediaType(converterSource) : null;
+    if (inputType === "image" && (converterType === "audio" || converterType === "video")) {
+      notify("Conversão de Imagem para Áudio/Vídeo não é suportada.", "error");
+      return;
+    }
+    if (inputType === "video" && converterType === "image") {
+      notify("Conversão de Vídeo para Imagem não é suportada.", "error");
+      return;
+    }
+    if (converterType === "video" && !converterResolution) {
+      notify("Selecione uma resolução para o vídeo.", "error");
+      return;
+    }
+
+    if (converterBusy) return;
+
+    try {
+      setConverterBusy(true);
+      setConverterResult(null);
+      setConverterProgress(0);
+      setConverterStatus("Solicitando diretório de saída...");
+
+      const targetDir = await chooseSaveDir();
+      if (!targetDir) {
+        setConverterStatus("Operação cancelada pelo usuário.");
+        setConverterBusy(false);
+        return;
+      }
+
+      let customName = null;
+      const defaultName = (converterSource.name || "arquivo").replace(/\.[^/.]+$/, "");
+      const rawName = window.prompt("Nome personalizado (opcional, sem extensão)", defaultName);
+      if (rawName !== null && rawName.trim()) {
+        const sanitized = sanitizeCustomName(rawName);
+        if (sanitized) {
+          customName = sanitized;
+        } else {
+          notify("Nome personalizado inválido; usaremos o padrão.", "error");
+        }
+      }
+
+      setConverterStatus("Enviando arquivo ao servidor...");
+
+      const formData = new FormData();
+      formData.append("file", converterSource, converterSource.name);
+      formData.append("input_format", selectedInputFormat);
+      formData.append("output_format", selectedOutputFormat);
+      formData.append("category", converterType);
+      formData.append("target_dir", targetDir);
+      if (customName) formData.append("custom_name", customName);
+      if (optionalImage) formData.append("background_image", optionalImage);
+
+      const response = await fetch(`${API_URL}/convert`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        if (response.status === 499) {
+          setConverterStatus("Conversão cancelada pelo usuário.");
+          setConverterProgress(0);
+          notify("Conversão cancelada.", "info");
+          return;
+        }
+        const text = await response.text();
+        throw new Error(text || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      setConverterStatus("Conversão concluída!");
+      setConverterProgress(100);
+      setConverterResult(data);
+      notify("Arquivo convertido com sucesso!", "success");
+    } catch (error) {
+      console.error("Conversion failed:", error);
+      const message = error instanceof Error ? error.message : "Erro desconhecido.";
+      setConverterStatus("Falha na conversão.");
+      setConverterProgress(0);
+      notify(message.includes("HTTP") ? "Falha na conversão." : message, "error");
+    } finally {
+      setConverterBusy(false);
+    }
+  }, [
+    converterSource,
+    selectedOutputFormat,
+    selectedInputFormat,
+    converterType,
+    converterBusy,
+    chooseSaveDir,
+    notify,
+  ]);
+
+  const cancelConversion = useCallback(async () => {
+    try {
+      await fetch(`${API_URL}/cancel`, { method: "POST" });
+      setConverterStatus("Cancelando conversão...");
+    } catch (e) {
+      console.error(e);
+      notify("Falha ao cancelar a conversão.", "error");
+    }
+  }, [notify]);
+
+  const ConverterLeft = (
+    <Section key="converter-left" variants={simpleFade} initial="initial" animate="animate" exit="exit">
+      <SectionTitle>Conversor de Formatos</SectionTitle>
+      <Muted>Converta áudios, vídeos e imagens mantendo a qualidade.</Muted>
+      <Divider />
+
+
+
+      <HiddenFileInput
+        id="converter-file-input"
+        type="file"
+        accept="audio/*,video/*,image/*"
+        onChange={handleConverterFileInputChange}
+        ref={converterFileInputRef}
+      />
+
+      <DropZone
+        htmlFor="converter-file-input"
+        onDragOver={handleConverterDragOver}
+        onDragLeave={handleConverterDragLeave}
+        onDrop={handleConverterDrop}
+        style={{
+          ...(converterDragging ? { borderColor: lightTheme.colors.primary, background: "rgba(10,132,255,0.12)" } : {}),
+          opacity: converterBusy ? 0.55 : 1,
+          pointerEvents: converterBusy ? "none" : undefined,
+        }}
+      >
+        <UploadCloud size={26} style={{ color: lightTheme.colors.primary }} />
+        <div style={{ fontWeight: 700, fontSize: 14 }}>
+          Arraste um arquivo (áudio, vídeo, imagem) ou clique para selecionar.
+        </div>
+        <Muted style={{ fontSize: 12 }}>
+          {converterBusy ? "Processando conversão..." : "Suporte para múltiplos formatos."}
+        </Muted>
+        {converterSource ? <Badge>{converterBusy ? "Processando" : "Pronto"}</Badge> : <Badge>{converterType.toUpperCase()}</Badge>}
+      </DropZone>
+
+      <AnimatePresence>
+        {converterSource && (
+          <motion.div key="converter-file" variants={subtleIn} initial="initial" animate="animate" exit="exit" style={{ marginTop: 16 }}>
+            <FieldLabel><FileVideo size={14} /> Arquivo selecionado</FieldLabel>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 8 }}>
+              <FileBadge><FileVideo size={14} /> {converterSource.name}</FileBadge>
+              <FileBadge><Download size={14} /> {formatBytes(converterSource.size)}</FileBadge>
+              {selectedInputFormat && <FileBadge>{selectedInputFormat.toUpperCase()}</FileBadge>}
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <GhostButton onClick={() => converterFileInputRef.current?.click()} disabled={converterBusy}>
+                <UploadCloud size={16} /> Trocar arquivo
+              </GhostButton>
+              <GhostButton onClick={clearConverter} disabled={converterBusy}>
+                <X size={16} /> Remover
+              </GhostButton>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <PillGroup style={{ marginBottom: 14, gridTemplateColumns: "repeat(3, 1fr)", "--pill-count": 3 }}>
+        <PillThumb
+          initial={false}
+          layout={false}
+          animate={{ left: calcThumbLeft(converterType === "video" ? 1 : converterType === "image" ? 2 : 0, 3) }}
+          transition={prefersReduced ? { duration: 0 } : transitions.spring}
+        />
+        <Pill onClick={() => setConverterType("audio")} $active={converterType === "audio"} disabled={converterInputType === "image"}>
+          <FileMusic size={16} /> Áudio
+        </Pill>
+        <Pill onClick={() => setConverterType("video")} $active={converterType === "video"} disabled={converterInputType === "image"}>
+          <Film size={16} /> Vídeo
+        </Pill>
+        <Pill onClick={() => setConverterType("image")} $active={converterType === "image"} disabled={converterInputType === "audio" || converterInputType === "video"}>
+          <ImageIcon size={16} /> Imagem
+        </Pill>
+      </PillGroup>
+
+      <Divider />
+      <FieldLabel>Opções de conversão</FieldLabel>
+      <Muted style={{ marginBottom: 12 }}>Formato original detectado: <strong>{selectedInputFormat.toUpperCase() || "AUTO"}</strong></Muted>
+
+      <div style={{ marginBottom: 16 }}>
+        <FieldLabel style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <RefreshCw size={14} /> Formato de saída
+        </FieldLabel>
+        <div style={{ position: "relative" }}>
+          <Input
+            placeholder="Ex: MP3, MP4, PNG..."
+            value={selectedOutputFormat}
+            onChange={(e) => {
+              setSelectedOutputFormat(e.target.value.toUpperCase());
+              setShowSuggestions(true);
+              setActiveSuggestion(0);
+            }}
+            onFocus={() => setShowSuggestions(true)}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+            onKeyDown={handleInputKeyDown}
+            disabled={converterBusy}
+            style={{
+              borderColor: selectedOutputFormat && !isOutputFormatValid ? "#ff4d4f" : undefined,
+              color: selectedOutputFormat && !isOutputFormatValid ? "#ff4d4f" : undefined
+            }}
+          />
+          <AnimatePresence>
+            {showSuggestions && filteredSuggestions.length > 0 && (
+              <SelectList
+                initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}
+                transition={{ duration: 0.1 }}
+                style={{ maxHeight: 200 }}
+              >
+                {filteredSuggestions.map((fmt, idx) => (
+                  <SelectItem
+                    key={fmt}
+                    $active={idx === activeSuggestion}
+                    onClick={() => handleSuggestionClick(fmt)}
+                    onMouseEnter={() => setActiveSuggestion(idx)}
+                  >
+                    <span>{fmt}</span>
+                    {idx === activeSuggestion && <Check size={14} />}
+                  </SelectItem>
+                ))}
+              </SelectList>
+            )}
+          </AnimatePresence>
+        </div>
+        {selectedOutputFormat && !isOutputFormatValid && filteredSuggestions.length === 0 && (
+          <Muted style={{ color: "#ff4d4f", marginTop: 6, fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+            <X size={12} /> Formato de arquivo não encontrado na lista de {converterType}.
+          </Muted>
+        )}
+        {selectedOutputFormat && isOutputFormatValid && (
+          <Muted style={{ color: lightTheme.colors.success, marginTop: 6, fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+            <Check size={12} /> Formato válido.
+          </Muted>
+        )}
+      </div>
+
+      {converterType === "video" && (
+        <div style={{ marginBottom: 16 }}>
+          <CustomSelect
+            label="Resolução do vídeo"
+            options={compressorResolutionOptions}
+            value={converterResolution}
+            onChange={setConverterResolution}
+            leftIcon={<Film size={14} />}
+            disabled={converterBusy}
+          />
+        </div>
+      )}
+
+      {converterType === "video" && converterInputType === "audio" && (
+        <div style={{ marginBottom: 16 }}>
+          <FieldLabel style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+            <ImageIcon size={14} /> Imagem de fundo (Opcional)
+          </FieldLabel>
+
+          <HiddenFileInput
+            type="file"
+            accept="image/*"
+            ref={optionalImageRef}
+            onChange={handleOptionalImageChange}
+          />
+
+          {optionalImage ? (
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <FileBadge style={{ maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <ImageIcon size={14} style={{ flexShrink: 0 }} /> {optionalImage.name}
+              </FileBadge>
+              <GhostButton onClick={() => setOptionalImage(null)} title="Remover imagem" style={{ padding: "4px 8px" }}>
+                <X size={14} />
+              </GhostButton>
+            </div>
+          ) : (
+            <GhostButton onClick={() => optionalImageRef.current?.click()} disabled={converterBusy}>
+              <UploadCloud size={16} /> Selecionar imagem
+            </GhostButton>
+          )}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 12, marginTop: 18, flexWrap: "wrap" }}>
+        <PrimaryButton
+          whileHover={prefersReduced ? undefined : { scale: 1.03 }}
+          whileTap={prefersReduced ? undefined : { scale: 0.98 }}
+          transition={transitions.hover}
+          onClick={handleStartConversion}
+          disabled={!converterSource || !isOutputFormatValid || converterBusy}
+        >
+          <Send size={18} /> Converter arquivo
+        </PrimaryButton>
+        {converterBusy && (
+          <GhostButton onClick={cancelConversion} disabled={!converterBusy}>
+            <Square size={16} /> Cancelar conversão
+          </GhostButton>
+        )}
+        <GhostButton onClick={clearConverter} disabled={!converterSource || converterBusy}>
+          <X size={16} /> Limpar
+        </GhostButton>
+      </div>
+    </Section>
+  );
+
+  const ConverterRight = (
+    <Section key="converter-right" variants={simpleFade} initial="initial" animate="animate" exit="exit">
+      <SectionTitle>Informações da conversão</SectionTitle>
+      <Muted>Visualize detalhes e acompanhe o progresso da conversão.</Muted>
+      <Divider />
+
+      <InfoBanner initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={transitions.layout}>
+        <FileVideo size={18} style={{ color: lightTheme.colors.primary }} />
+        <div style={{ display: "grid", gap: 6 }}>
+          <span style={{ fontWeight: 700, fontSize: 13 }}>Status da conversão</span>
+          <Muted style={{ fontSize: 12 }}>{converterStatus}</Muted>
+          {converterBusy && converterProgress > 0 && (
+            <ProgressWrap style={{ margin: "6px 0 0 0", maxWidth: "100%" }}>
+              <ProgressTrack>
+                <ProgressBar
+                  initial={false}
+                  animate={{ width: `${Math.max(2, converterProgress)}%` }}
+                  style={{ width: `${Math.max(2, converterProgress)}%` }}
+                />
+              </ProgressTrack>
+            </ProgressWrap>
+          )}
+        </div>
+        <Badge>
+          {converterBusy ? `${Math.round(converterProgress)}%` : "Pronto"}
+        </Badge>
+      </InfoBanner>
+
+      <div style={{ height: 12 }} />
+
+      <InfoBanner initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={transitions.layout}>
+        <Sparkles size={18} style={{ color: lightTheme.colors.success }} />
+        <div style={{ display: "grid", gap: 4 }}>
+          <span style={{ fontWeight: 700, fontSize: 13 }}>Resumo rápido</span>
+          <Muted style={{ fontSize: 12 }}>
+            Tipo: {converterType === "audio" ? "Áudio" : converterType === "video" ? "Vídeo" : "Imagem"}
+          </Muted>
+          {converterSource && (
+            <Muted style={{ fontSize: 12 }}>
+              Arquivo: {converterSource.name} ({formatBytes(converterSource.size)})
+            </Muted>
+          )}
+          {selectedInputFormat && selectedOutputFormat && (
+            <Muted style={{ fontSize: 12 }}>
+              Conversão: {selectedInputFormat.toUpperCase()} → {selectedOutputFormat.toUpperCase()}
+            </Muted>
+          )}
+          {converterResult && (
+            <>
+              <Muted style={{ fontSize: 12 }}>
+                Arquivo final: {converterResult.filename || "--"}
+              </Muted>
+              <Muted style={{ fontSize: 12 }}>
+                Caminho: {converterResult.output_path || "--"}
+              </Muted>
+            </>
+          )}
+        </div>
+        <Badge>{converterType.toUpperCase()}</Badge>
+      </InfoBanner>
+
+      <div style={{ marginTop: 18, display: "grid", gap: 10 }}>
+        <FieldLabel>Próximos passos</FieldLabel>
+        <Muted style={{ fontSize: 12 }}>
+          Acompanhe o progresso em tempo real acima. Após finalizar, utilize as ações rápidas para acessar o arquivo convertido.
+        </Muted>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <GhostButton
+            onClick={() => converterResult?.output_path && revealInFolder(converterResult.output_path)}
+            disabled={!converterResult?.output_path}
+          >
+            <FolderOpen size={16} /> Abrir local
+          </GhostButton>
+          <GhostButton
+            onClick={() => handleCopyPath(converterResult?.output_path ?? "")}
+            disabled={!converterResult?.output_path}
+          >
+            <Copy size={16} /> Copiar caminho
+          </GhostButton>
+        </div>
+      </div>
+    </Section>
+  );
+
   // 4. Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = async (e) => {
@@ -1651,10 +2299,21 @@ export default function DriveStyleDownloader() {
         return;
       }
 
-      // Ctrl+Tab: Toggle Mode
+      // Ctrl+3: Converter Mode
+      if (e.ctrlKey && e.key === "3") {
+        e.preventDefault();
+        setActiveView("converter");
+        return;
+      }
+
+      // Ctrl+Tab: Toggle Mode (cycles through all tabs)
       if (e.ctrlKey && e.key === "Tab") {
         e.preventDefault();
-        setActiveView((prev) => (prev === "downloader" ? "compressor" : "downloader"));
+        setActiveView((prev) => {
+          if (prev === "downloader") return "compressor";
+          if (prev === "compressor") return "converter";
+          return "downloader";
+        });
         return;
       }
     };
@@ -1689,14 +2348,58 @@ export default function DriveStyleDownloader() {
                 </BrandIconWrap>
                 <BrandTitle>
                   <BrandName>Ultra Downloader</BrandName>
-                  <BrandTag>Download Rápido • Sem Limites</BrandTag>
+                  <BrandTag style={{ position: "relative", display: "grid", placeItems: "start" }}>
+                    {/* Spacer invisible to prevent layout shift - using Longest combo */}
+                    <span aria-hidden="true" style={{ opacity: 0, visibility: "hidden" }}>Download Rápido • Sem Limites</span>
+
+                    <div style={{ position: "absolute", top: 0, left: 0, display: "flex", gap: "4px" }}>
+                      {/* Prefix - Fade out only on full transition */}
+                      <span style={{
+                        opacity: isTransitioning ? 0 : 1,
+                        transition: "opacity 0.25s ease-in-out",
+                        whiteSpace: "nowrap"
+                      }}>
+                        {BRAND_VARIATIONS[prefixIndex].prefix}
+                      </span>
+
+                      {/* Separator - Fade out on full transition */}
+                      <span style={{
+                        opacity: isTransitioning ? 0 : 1,
+                        transition: "opacity 0.25s ease-in-out"
+                      }}>•</span>
+
+                      {/* Suffix Container */}
+                      <div style={{ position: "relative" }}>
+                        {BRAND_VARIATIONS[prefixIndex].suffixes.map((s, i) => (
+                          <span key={i} style={{
+                            position: "absolute", top: 0, left: 0,
+                            whiteSpace: "nowrap",
+                            opacity: (i === suffixIndex && !isTransitioning) ? 1 : 0,
+                            transform: (i === suffixIndex && !isTransitioning) ? "translateY(0)" : "translateY(2px)",
+                            transition: "opacity 0.25s ease-in-out, transform 0.25s ease-out",
+                            pointerEvents: (i === suffixIndex) ? "auto" : "none"
+                          }}>
+                            {s}
+                          </span>
+                        ))}
+                        {/* Invisible spacer for suffix width? No, the outer spacer handles max width. */}
+                        {/* But we need this container to have width? */}
+                        {/* Inner spans are absolute. Container width is 0. */}
+                        {/* Layout: Prefix (static relative) + Sep + SuffixDiv (0 width). */}
+                        {/* Outer BrandTag container has width of "Longest Combo". */}
+                        {/* User sees aligned text. Suffix alignment? */}
+                        {/* Suffixes are left-aligned after Sep. */}
+                        {/* Correct. */}
+                      </div>
+                    </div>
+                  </BrandTag>
                 </BrandTitle>
               </Brand>
-              <PillGroup style={{ width: "clamp(280px, 45vw, 340px)", gridTemplateColumns: "repeat(2, 1fr)" }}>
+              <PillGroup style={{ width: "clamp(380px, 55vw, 480px)", gridTemplateColumns: "repeat(3, 1fr)", "--pill-count": 3 }}>
                 <PillThumb
                   initial={false}
                   layout={false}
-                  animate={{ left: calcThumbLeft(activeView === "compressor" ? 1 : 0, 2) }}
+                  animate={{ left: calcThumbLeft(activeView === "compressor" ? 1 : activeView === "converter" ? 2 : 0, 3) }}
                   transition={prefersReduced ? { duration: 0 } : transitions.spring}
                 />
                 <Pill onClick={() => setActiveView("downloader")} $active={activeView === "downloader"}>
@@ -1704,6 +2407,9 @@ export default function DriveStyleDownloader() {
                 </Pill>
                 <Pill onClick={() => setActiveView("compressor")} $active={activeView === "compressor"}>
                   <FileVideo size={16} /> Compressor
+                </Pill>
+                <Pill onClick={() => setActiveView("converter")} $active={activeView === "converter"}>
+                  <RefreshCw size={16} /> Converter
                 </Pill>
               </PillGroup>
             </HeaderRow>
@@ -1714,10 +2420,15 @@ export default function DriveStyleDownloader() {
                 {LeftColumn}
                 {RightColumn}
               </>
-            ) : (
+            ) : activeView === "compressor" ? (
               <>
                 {CompressorLeft}
                 {CompressorRight}
+              </>
+            ) : (
+              <>
+                {ConverterLeft}
+                {ConverterRight}
               </>
             )}
           </Content>
