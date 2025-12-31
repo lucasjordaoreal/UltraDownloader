@@ -40,7 +40,7 @@ from .update_manager import UpdateManager
 ROOT_DIR = Path(__file__).resolve().parents[1]  # ./my-app
 BACKEND_DIR = Path(__file__).resolve().parent   # ./my-app/backend
 FRONTEND_DIST = ROOT_DIR / "frontend" / "dist"
-APP_VERSION = os.environ.get("APP_VERSION", "4.2")
+APP_VERSION = os.environ.get("APP_VERSION", "4.4")
 
 
 def resource_path(rel: str | Path) -> Path:
@@ -1001,7 +1001,7 @@ def _unique_output_path(base_dir: Path, base_name: str, suffix: str = ".mp4") ->
     return base_dir / f"{unique}{suffix}"
 
 
-def _run_ffmpeg_with_progress_sync(cmd: List[str], duration: float, token: Optional[CancelToken] = None) -> None:
+def _run_ffmpeg_with_progress_sync(cmd: List[str], duration: float, token: Optional[CancelToken] = None, task_name: str = "compressor") -> None:
     process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -1044,9 +1044,10 @@ def _run_ffmpeg_with_progress_sync(cmd: List[str], duration: float, token: Optio
                     micro = int(line.split("=", 1)[1])
                     seconds = micro / 1_000_000.0
                     pct = max(0.0, min(100.0, (seconds / duration) * 100.0))
+                    status_verb = "Comprimindo..." if task_name == "compressor" else "Convertendo..."
                     ws_manager.broadcast_threadsafe({
-                        "task": "compressor",
-                        "status": "Comprimindo...",
+                        "task": task_name,
+                        "status": status_verb,
                         "progress": round(pct, 2),
                     })
                 except Exception:
@@ -1066,11 +1067,11 @@ def _run_ffmpeg_with_progress_sync(cmd: List[str], duration: float, token: Optio
         raise RuntimeError(f"ffmpeg falhou ({process.returncode}). Detalhes:\n{snippet}")
 
 
-async def _run_ffmpeg_with_progress(cmd: List[str], duration: float, token: Optional[CancelToken] = None) -> None:
+async def _run_ffmpeg_with_progress(cmd: List[str], duration: float, token: Optional[CancelToken] = None, task_name: str = "compressor") -> None:
     """
-    Executa o ffmpeg em uma thread separada para nǜo bloquear o event loop enquanto envia progresso.
+    Executa o ffmpeg em uma thread separada para não bloquear o event loop enquanto envia progresso.
     """
-    await asyncio.to_thread(_run_ffmpeg_with_progress_sync, cmd, duration, token)
+    await asyncio.to_thread(_run_ffmpeg_with_progress_sync, cmd, duration, token, task_name)
 
 
 def _ffmpeg_list_encoders() -> str:
@@ -1411,18 +1412,286 @@ async def compress_endpoint(
             "status": "Compressão cancelada pelo usuário.",
             "progress": 0.0,
         })
-        raise HTTPException(status_code=499, detail="Compressão cancelada pelo usuário.")
-    except HTTPException:
-        raise
-    except Exception as exc:
+        raise HTTPException(status_code=499, detail="Cancelado pelo usuário.")
+
+    except Exception as e:
         ws_manager.broadcast_threadsafe({
             "task": "compressor",
-            "status": f"Erro na compressão: {exc}",
+            "status": str(e),
+        })
+        raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        if temp_dir.exists():
+            try:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except Exception:
+                pass
+        if ACTIVE_TOKEN is current_token:
+            ACTIVE_TOKEN = None
+
+
+@app.post("/convert")
+async def convert_endpoint(
+    file: UploadFile = File(...),
+    input_format: str = Form(...),
+    output_format: str = Form(...),
+    category: str = Form(...),  # "audio", "video", or "image"
+    target_dir: Optional[str] = Form(None),
+    custom_name: Optional[str] = Form(None),
+    background_image: Optional[UploadFile] = File(None),
+):
+    """
+    Converts media files between formats using ffmpeg.
+    Supports audio, video, and image conversions.
+    """
+    global ACTIVE_TOKEN
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Arquivo inválido.")
+    
+    category = category.lower()
+    if category not in {"audio", "video", "image"}:
+        raise HTTPException(status_code=400, detail="Categoria inválida.")
+    
+    input_fmt = input_format.lower().strip()
+    output_fmt = output_format.lower().strip()
+    if not input_fmt or not output_fmt:
+        raise HTTPException(status_code=400, detail="Formatos de entrada e saída são obrigatórios.")
+    
+    temp_dir = Path(tempfile.mkdtemp(prefix="convert-"))
+    temp_input = temp_dir / f"input.{input_fmt}"
+    ACTIVE_TOKEN = CancelToken()
+    current_token = ACTIVE_TOKEN
+
+    ws_manager.broadcast_threadsafe({
+        "task": "converter",
+        "status": "Preparando conversão...",
+        "progress": 0.0,
+    })
+
+    try:
+        # Save uploaded file
+        with temp_input.open("wb") as dest:
+            while True:
+                chunk = await file.read(4 * 1024 * 1024)
+                if not chunk:
+                    break
+                dest.write(chunk)
+        await file.close()
+
+        if not temp_input.exists() or temp_input.stat().st_size == 0:
+            raise HTTPException(status_code=400, detail="Arquivo enviado está vazio.")
+
+        if current_token.is_cancelled():
+            raise CanceledByUser()
+
+        # Determine output directory and filename
+        output_dir = _ensure_dir(Path(target_dir).expanduser()) if target_dir else _ensure_dir(ROOT_DIR / "downloads" / "converted")
+        base_name = _sanitize_filename(custom_name) if custom_name else None
+        if not base_name:
+            original_stem = _sanitize_filename(Path(file.filename).stem) or "arquivo"
+            base_name = f"{original_stem}-{output_fmt}"
+        output_path = _unique_output_path(output_dir, base_name, f".{output_fmt}")
+
+        # Build ffmpeg command based on category
+        cmd: List[str] = [
+            str(FFMPEG_EXE),
+            "-hide_banner",
+            "-y",
+        ]
+
+        # Save background image if present
+        temp_image = None
+        if background_image and background_image.filename:
+            temp_image = temp_dir / f"bg_{background_image.filename}"
+            with temp_image.open("wb") as dest:
+                shutil.copyfileobj(background_image.file, dest)
+            await background_image.close()
+
+        # Check for Audio -> Video case
+        is_audio_input = input_fmt in {"mp3", "aac", "opus", "flac", "wav", "ogg", "m4a", "wma", "ac3"}
+        
+        if category == "video" and is_audio_input:
+            if temp_image:
+                cmd.extend(["-loop", "1", "-i", str(temp_image)])
+                cmd.extend(["-i", str(temp_input)])
+                cmd.extend(["-shortest", "-tune", "stillimage"])
+            else:
+                # Black screen fallback
+                cmd.extend(["-f", "lavfi", "-i", "color=c=black:s=1280x720:r=5"])
+                cmd.extend(["-i", str(temp_input)])
+                cmd.extend(["-shortest"])
+        else:
+            cmd.extend(["-i", str(temp_input)])
+
+        # Get duration for progress tracking
+        duration = 0.0
+        if category in {"audio", "video"}:
+            try:
+                media = _probe_media(temp_input)
+                duration = media.get("duration", 0.0)
+            except Exception:
+                duration = 0.0
+
+        # Add format-specific conversion parameters
+        # Add format-specific conversion parameters and execute
+        if category == "audio":
+            # Audio conversion
+            cmd.extend(["-c:a"])
+            audio_codecs = {
+                "mp3": "libmp3lame",
+                "aac": "aac",
+                "opus": "libopus",
+                "flac": "flac",
+                "wav": "pcm_s16le",
+                "ogg": "libvorbis",
+                "m4a": "aac",
+                "wma": "wmav2",
+                "ac3": "ac3",
+            }
+            codec = audio_codecs.get(output_fmt, "copy")
+            cmd.extend([codec, "-b:a", "192k"])
+            
+            if duration > 0:
+                cmd.extend(["-progress", "pipe:1", "-nostats"])
+            
+            cmd.append(str(output_path))
+            
+            ws_manager.broadcast_threadsafe({
+                "task": "converter",
+                "status": f"Convertendo {input_fmt.upper()} → {output_fmt.upper()}...",
+                "progress": 5.0,
+            })
+            if duration > 0:
+                await _run_ffmpeg_with_progress(cmd, duration, current_token, task_name="converter")
+            else:
+                # Audio without duration (rare, but handled like image for safety?)
+                # Usually audio has duration. If not, use standard call
+                 subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        elif category == "video":
+            # Video conversion with GPU Auto-Detect + CPU Retry
+            attempts = ["auto"]
+            
+            while attempts:
+                mode_req = attempts.pop(0)
+                encoder, xargs, mode_used = _select_video_encoder(mode_req)
+                
+                # Clone base command to avoid pollution on retry
+                run_cmd = list(cmd)
+                
+                # Apply codecs
+                run_cmd.extend(["-c:v", encoder])
+                run_cmd.extend(xargs)
+                
+                if mode_used == "cpu":
+                    # CPU default quality
+                    run_cmd.extend(["-crf", "23", "-preset", "fast"])
+                
+                # Audio part
+                run_cmd.extend(["-c:a", "aac", "-b:a", "128k"])
+                
+                if output_fmt == "mp4":
+                    run_cmd.extend(["-movflags", "+faststart"])
+                
+                if duration > 0:
+                    run_cmd.extend(["-progress", "pipe:1", "-nostats"])
+                
+                run_cmd.append(str(output_path))
+                
+                ws_manager.broadcast_threadsafe({
+                    "task": "converter",
+                    "status": f"Convertendo ({mode_used.upper()})...",
+                    "progress": 5.0,
+                })
+                
+                try:
+                    await _run_ffmpeg_with_progress(run_cmd, duration, current_token, task_name="converter")
+                    break # Success
+                except Exception as e:
+                    if mode_used == "gpu":
+                        print(f"GPU Encoding failed: {e}. Retrying with CPU.")
+                        ws_manager.broadcast_threadsafe({
+                            "task": "converter", 
+                            "status": "Aceleração falhou. Tentando CPU...",
+                            "progress": 5.0
+                        })
+                        attempts.append("cpu")
+                    else:
+                        raise e # CPU failed, real error
+
+        elif category == "image":
+            # Image conversion
+            cmd.extend(["-q:v", "2"])  # High quality
+            cmd.append(str(output_path))
+            
+            ws_manager.broadcast_threadsafe({
+                "task": "converter",
+                "status": "Processando imagem...",
+                "progress": 50.0,
+            })
+            
+            startupinfo = None
+            if sys.platform == "win32":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                startupinfo=startupinfo,
+            )
+            stdout, stderr = await process.communicate()
+            if process.returncode != 0:
+                error_msg = stderr.decode("utf-8", errors="ignore") if stderr else "Conversão falhou"
+                raise RuntimeError(f"ffmpeg img falhou: {error_msg}")
+
+        if not output_path.exists():
+            raise RuntimeError("Arquivo convertido não foi gerado.")
+
+        final_size = output_path.stat().st_size
+
+        ws_manager.broadcast_threadsafe({
+            "task": "converter",
+            "status": "Conversão concluída!",
+            "progress": 100.0,
+            "output_path": str(output_path.resolve()),
+            "filename": output_path.name,
+        })
+
+        return {
+            "ok": True,
+            "output_path": str(output_path.resolve()),
+            "filename": output_path.name,
+            "final_size": final_size,
+            "final_size_human": _format_bytes(final_size),
+            "input_format": input_fmt,
+            "output_format": output_fmt,
+            "category": category,
+        }
+
+    except CanceledByUser:
+        ws_manager.broadcast_threadsafe({
+            "task": "converter",
+            "status": "Conversão cancelada pelo usuário.",
             "progress": 0.0,
         })
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=499, detail="Cancelado pelo usuário.")
+
+    except Exception as e:
+        ws_manager.broadcast_threadsafe({
+            "task": "converter",
+            "status": f"Erro: {str(e)}",
+        })
+        raise HTTPException(status_code=500, detail=str(e))
+
     finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        if temp_dir.exists():
+            try:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except Exception:
+                pass
         if ACTIVE_TOKEN is current_token:
             ACTIVE_TOKEN = None
 
