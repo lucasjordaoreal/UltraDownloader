@@ -10,7 +10,10 @@ Ele serve para que você possa salvar seus vídeos favoritos, músicas e conteú
 
 ### Para quem ele é indicado?
 Este projeto é ideal para qualquer pessoa que queira baixar conteúdo da web sem precisar lidar com configurações complexas ou sites cheios de anúncios. Seja você um usuário comum ou alguém que gosta de tecnologia, o UltraDownloader foi feito para você.
+### Exemplo de uso:
+![Demonstração do Downloader](images/downloader.gif)
 
+![Demonstração do Compressor](images/compressor.gif)
 ---
 
 ## 2. Como Usar (Usuário Comum – Release)
